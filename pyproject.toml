@@ -4,13 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rag-reliability-lab"
-version = "0.1.0"
-description = "A deterministic lab for testing RAG citations, groundedness, and hallucination detection."
+version = "0.3.0"
+description = "A deterministic lab for testing RAG citations, groundedness, hallucination detection, and regressions."
 requires-python = ">=3.11"
 authors = [{ name = "Ruban Chakravarthi" }]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+rag_reliability_lab = ["benchmarks/*.json"]
+
 [project.scripts]
 rag-reliability-demo = "rag_reliability_lab.demo:main"
+rag-reliability-benchmark = "rag_reliability_lab.benchmark_cli:main"
