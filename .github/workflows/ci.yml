@@ -17,3 +17,4 @@ jobs:
       - run: python -m pip install -e . pytest
       - run: pytest -q
       - run: python -m rag_reliability_lab.demo
+      - run: python -m rag_reliability_lab.benchmark_cli --json benchmark-report.json --markdown benchmark-report.md

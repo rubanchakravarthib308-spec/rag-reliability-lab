@@ -1,10 +1,10 @@
 # RAG Reliability Lab
 
-> **A transparent testbed for retrieval quality, citation validity, groundedness, and hallucination risk in RAG systems.**
+> **A transparent testbed for retrieval quality, citation validity, claim-level groundedness, hallucination risk, and RAG regressions.**
 
-Many RAG demos stop when the model returns an answer. This project focuses on the harder question:
+Many RAG demos stop when the model returns an answer. This project focuses on a harder question:
 
-**Can we measure whether the answer is actually supported by the evidence the system retrieved?**
+**Can we measure whether retrieval and generated claims remain supported over time?**
 
 ## What this project demonstrates
 
@@ -17,32 +17,31 @@ Ranked evidence
   ↓
 Answer + citations
   ↓
-Citation validation
+Claim-level evidence checks
   ↓
-Groundedness scoring
+Groundedness + hallucination scoring
   ↓
-Hallucination-risk check
+Benchmark regression gate
   ↓
-Pass / fail with reasons
+JSON + Markdown report
 ```
 
-The baseline remains deterministic and API-key free. Semantic retrieval is exposed through a provider-neutral embedding interface, so a real embedding service can be plugged in later without coupling the reliability pipeline to one vendor.
+The baseline remains deterministic and API-key free. Semantic retrieval is exposed through a provider-neutral embedding interface, while the benchmark runner makes reliability changes measurable in CI.
 
-## Why reliability matters
+## Reliability checks
 
-A RAG system can retrieve relevant documents and still produce an unsupported answer. It can also attach citations that do not actually belong to the evidence used.
-
-This lab makes those failure modes explicit by checking:
+The lab evaluates:
 
 - **Retrieval relevance** — rank evidence against the question
 - **Citation validity** — confirm cited document IDs were actually retrieved
-- **Groundedness** — estimate how much answer content is supported by cited evidence
+- **Claim support** — evaluate each answer claim against cited evidence
+- **Groundedness** — aggregate support scores across claims
 - **Hallucination risk** — surface unsupported content instead of hiding it
-- **Failure reasons** — return machine-readable reasons when an answer should not pass
+- **Regression thresholds** — fail CI when reliability metrics fall below the benchmark contract
 
 ## Retrieval boundary
 
-Two retrieval paths are now available:
+Two retrieval paths are available:
 
 ```text
 Question ──→ Lexical Retriever ──→ token-vector cosine similarity
@@ -50,40 +49,45 @@ Question ──→ Lexical Retriever ──→ token-vector cosine similarity
     └──────→ Embedding Retriever ──→ EmbeddingProvider ──→ vector cosine similarity
 ```
 
-`retrieve(...)` preserves the deterministic lexical path used by the original demo and offline tests.
+`retrieve(...)` preserves the deterministic lexical path used by the demo and benchmark suite.
 
-`retrieve_embeddings(...)` accepts any object implementing the provider-neutral `EmbeddingProvider` protocol. The repository includes `StaticEmbeddingProvider` for deterministic fixtures, so semantic-ranking behavior can be tested without an API key or network call.
+`retrieve_embeddings(...)` accepts any object implementing the provider-neutral `EmbeddingProvider` protocol. `StaticEmbeddingProvider` keeps semantic-ranking tests fully offline.
 
-Example:
+## Claim-level groundedness
 
-```python
-from rag_reliability_lab import Document, StaticEmbeddingProvider, retrieve_embeddings
+Answers are split into evaluable claims. Each claim records:
 
-query = "prevent duplicate agent actions"
-documents = [
-    Document(id="a", text="Idempotency keys stop the same tool call from running twice."),
-    Document(id="b", text="Redis can cache frequently accessed application data."),
-]
+- a support score
+- whether it passed the support threshold
+- the retrieved evidence IDs that support it
 
-provider = StaticEmbeddingProvider(
-    vectors={
-        query: (1.0, 0.0),
-        documents[0].text: (0.99, 0.01),
-        documents[1].text: (0.0, 1.0),
-    }
-)
+The answer passes only when citations are valid and every evaluable claim is sufficiently supported.
 
-results = retrieve_embeddings(query, documents, provider, top_k=1)
+## Benchmark + regression reporting
+
+The repository includes a versioned benchmark dataset at:
+
+```text
+src/rag_reliability_lab/benchmarks/v1.json
 ```
 
-A production adapter only needs to implement:
+Each benchmark case defines a question, expected evidence, a reference answer, and citations. The runner measures:
 
-```python
-class EmbeddingProvider(Protocol):
-    def embed(self, texts: list[str]) -> list[list[float]]: ...
+- retrieval precision
+- retrieval coverage
+- groundedness
+- hallucination risk
+- reliability pass rate
+
+Run it locally:
+
+```bash
+python -m rag_reliability_lab.benchmark_cli \
+  --json benchmark-report.json \
+  --markdown benchmark-report.md
 ```
 
-The retriever validates vector counts and dimensions before ranking documents.
+The command writes both a **machine-readable JSON report** and a **human-readable Markdown report**. It exits with code `1` if benchmark thresholds regress, making it suitable as a CI quality gate.
 
 ## Architecture
 
@@ -99,19 +103,24 @@ Retriever
 Ranked Evidence
    │
    ▼
-Answerer / LLM Adapter
-   │
-   ▼
 Answer + Citations
    │
    ▼
-Reliability Evaluator
+Claim-level Reliability Evaluator
    ├── Citation validity
+   ├── Per-claim support
    ├── Groundedness
    └── Hallucination risk
    │
    ▼
-Pass / Fail + Reasons
+Benchmark Runner
+   ├── Retrieval precision / coverage
+   ├── Groundedness summary
+   ├── Hallucination summary
+   └── Regression thresholds
+   │
+   ▼
+JSON report + Markdown report + CI exit status
 ```
 
 See [`docs/architecture.md`](docs/architecture.md) for the design rationale.
@@ -124,39 +133,30 @@ Requirements: Python 3.11+
 python -m pip install -e . pytest
 pytest -q
 python -m rag_reliability_lab.demo
+python -m rag_reliability_lab.benchmark_cli
 ```
 
-No paid API, model key, vector database, or external service is required for the baseline demo or embedding-retrieval tests.
-
-## Example behavior
-
-A supported answer with a valid citation can pass:
-
-```text
-Answer: High-risk agent actions should require human approval before execution.
-Citation: doc-approval
-Groundedness: high
-Citation precision: 1.0
-Hallucination risk: low
-Result: PASS
-```
-
-An answer that invents unsupported requirements is rejected, even when it includes a valid citation.
+No paid API, model key, vector database, or external service is required for the demo, tests, or benchmark regression suite.
 
 ## Project structure
 
 ```text
 src/rag_reliability_lab/
-  embeddings.py     # provider-neutral embedding interface + deterministic fixture
-  retrieval.py      # lexical and embedding-based evidence ranking
-  evaluation.py     # citation + groundedness + hallucination checks
-  pipeline.py       # retrieval → answer → evaluation workflow
-  types.py          # domain models
-  demo.py           # deterministic end-to-end example
+  embeddings.py       # provider-neutral embedding interface + deterministic fixture
+  retrieval.py        # lexical and embedding-based evidence ranking
+  evaluation.py       # citation + claim-level groundedness + hallucination checks
+  benchmark.py        # benchmark metrics + JSON / Markdown report generation
+  benchmark_cli.py    # CI-friendly benchmark command
+  benchmarks/v1.json  # versioned questions, evidence expectations, thresholds
+  pipeline.py         # retrieval → answer → evaluation workflow
+  types.py            # domain models
+  demo.py             # deterministic end-to-end example
 
 tests/
   test_reliability.py
   test_embedding_retrieval.py
+  test_claim_groundedness.py
+  test_benchmark.py
 
 docs/
   architecture.md
@@ -167,7 +167,7 @@ docs/
 
 ## Current maturity
 
-**v0.2 — pluggable retrieval boundary**
+**v0.3 — measurable RAG reliability baseline**
 
 Implemented:
 
@@ -175,31 +175,30 @@ Implemented:
 - provider-neutral embedding interface
 - cosine-similarity semantic retrieval
 - deterministic embedding fixtures for offline tests
-- configurable top-k retrieval
-- explicit evidence objects
+- claim-level evidence alignment
+- explicit unsupported-claim detection
 - machine-checkable citations
-- groundedness score
-- hallucination-risk score
-- pass/fail reliability gate
-- safety-focused tests
-- CI validation
-- deterministic demo
+- groundedness + hallucination-risk scoring
+- versioned benchmark dataset
+- retrieval precision / coverage metrics
+- benchmark JSON + Markdown reports
+- CI-friendly regression thresholds
+- deterministic demo and tests
 
 Next milestones:
 
-- claim-level evidence alignment
-- precision@k / recall@k retrieval metrics
-- benchmark dataset + experiment runner
+- larger benchmark coverage
+- precision@k / recall@k by retrieval mode
 - LLM provider adapter behind a strict interface
 - semantic groundedness / entailment checks
-- evaluation reports and regression tracking
+- historical report comparison and trend tracking
 
 ## Engineering principle
 
-> **A RAG answer is not trustworthy because it has citations. It is trustworthy only when the citations and claims can be verified against the evidence.**
+> **A RAG answer is not trustworthy because it has citations. It is trustworthy only when the citations and claims can be verified against evidence — and that reliability should be measurable over time.**
 
 ## About this project
 
 Built by **Ruban Chakravarthi** as a public AI-engineering portfolio project while transitioning from enterprise technology into hands-on AI engineering.
 
-The goal is not to hide complexity behind a framework. It is to make reliability behavior visible, testable, and progressively more rigorous.
+The goal is not to hide complexity behind a framework. It is to make reliability behavior visible, testable, measurable, and progressively more rigorous.
