@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from .types import AnswerResult, ClaimEvaluation, EvaluationResult, RetrievalResult
+from .types import AnswerResult, ClaimEvaluation, Document, EvaluationResult, RetrievalResult
 
 _TOKEN = re.compile(r"[a-zA-Z0-9]+")
 _CLAIM_SPLIT = re.compile(r"(?<=[.!?])\s+")
@@ -24,7 +24,12 @@ def _split_claims(text: str) -> list[str]:
     return [claim.strip() for claim in _CLAIM_SPLIT.split(text.strip()) if claim.strip()]
 
 
-def _claim_support(claim: str, evidence_by_id: dict[str, object], cited_ids: set[str], threshold: float) -> ClaimEvaluation:
+def _claim_support(
+    claim: str,
+    evidence_by_id: dict[str, Document],
+    cited_ids: set[str],
+    threshold: float,
+) -> ClaimEvaluation:
     claim_tokens = _content_tokens(claim)
     supporting_ids: list[str] = []
     supported_tokens: set[str] = set()
@@ -33,8 +38,7 @@ def _claim_support(claim: str, evidence_by_id: dict[str, object], cited_ids: set
         document = evidence_by_id.get(doc_id)
         if document is None:
             continue
-        document_tokens = _content_tokens(document.text)  # type: ignore[attr-defined]
-        overlap = claim_tokens & document_tokens
+        overlap = claim_tokens & _content_tokens(document.text)
         if overlap:
             supporting_ids.append(doc_id)
             supported_tokens |= overlap
