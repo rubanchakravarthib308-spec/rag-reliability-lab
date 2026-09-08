@@ -11,7 +11,7 @@ Many RAG demos stop when the model returns an answer. This project focuses on th
 ```text
 Question
   ↓
-Retrieval
+Retrieval (lexical or embedding-based)
   ↓
 Ranked evidence
   ↓
@@ -26,7 +26,7 @@ Hallucination-risk check
 Pass / fail with reasons
 ```
 
-The current implementation is deliberately deterministic and API-key free, so reviewers can inspect and test the reliability boundary itself rather than trusting a black-box model call.
+The baseline remains deterministic and API-key free. Semantic retrieval is exposed through a provider-neutral embedding interface, so a real embedding service can be plugged in later without coupling the reliability pipeline to one vendor.
 
 ## Why reliability matters
 
@@ -40,6 +40,51 @@ This lab makes those failure modes explicit by checking:
 - **Hallucination risk** — surface unsupported content instead of hiding it
 - **Failure reasons** — return machine-readable reasons when an answer should not pass
 
+## Retrieval boundary
+
+Two retrieval paths are now available:
+
+```text
+Question ──→ Lexical Retriever ──→ token-vector cosine similarity
+    │
+    └──────→ Embedding Retriever ──→ EmbeddingProvider ──→ vector cosine similarity
+```
+
+`retrieve(...)` preserves the deterministic lexical path used by the original demo and offline tests.
+
+`retrieve_embeddings(...)` accepts any object implementing the provider-neutral `EmbeddingProvider` protocol. The repository includes `StaticEmbeddingProvider` for deterministic fixtures, so semantic-ranking behavior can be tested without an API key or network call.
+
+Example:
+
+```python
+from rag_reliability_lab import Document, StaticEmbeddingProvider, retrieve_embeddings
+
+query = "prevent duplicate agent actions"
+documents = [
+    Document(id="a", text="Idempotency keys stop the same tool call from running twice."),
+    Document(id="b", text="Redis can cache frequently accessed application data."),
+]
+
+provider = StaticEmbeddingProvider(
+    vectors={
+        query: (1.0, 0.0),
+        documents[0].text: (0.99, 0.01),
+        documents[1].text: (0.0, 1.0),
+    }
+)
+
+results = retrieve_embeddings(query, documents, provider, top_k=1)
+```
+
+A production adapter only needs to implement:
+
+```python
+class EmbeddingProvider(Protocol):
+    def embed(self, texts: list[str]) -> list[list[float]]: ...
+```
+
+The retriever validates vector counts and dimensions before ranking documents.
+
 ## Architecture
 
 ```text
@@ -47,6 +92,8 @@ Question
    │
    ▼
 Retriever
+   ├── deterministic lexical path
+   └── provider-neutral embedding path
    │
    ▼
 Ranked Evidence
@@ -79,7 +126,7 @@ pytest -q
 python -m rag_reliability_lab.demo
 ```
 
-No paid API, model key, vector database, or external service is required for the baseline demo.
+No paid API, model key, vector database, or external service is required for the baseline demo or embedding-retrieval tests.
 
 ## Example behavior
 
@@ -100,7 +147,8 @@ An answer that invents unsupported requirements is rejected, even when it includ
 
 ```text
 src/rag_reliability_lab/
-  retrieval.py      # deterministic evidence ranking
+  embeddings.py     # provider-neutral embedding interface + deterministic fixture
+  retrieval.py      # lexical and embedding-based evidence ranking
   evaluation.py     # citation + groundedness + hallucination checks
   pipeline.py       # retrieval → answer → evaluation workflow
   types.py          # domain models
@@ -108,6 +156,7 @@ src/rag_reliability_lab/
 
 tests/
   test_reliability.py
+  test_embedding_retrieval.py
 
 docs/
   architecture.md
@@ -118,11 +167,15 @@ docs/
 
 ## Current maturity
 
-**v0.1 — transparent reliability baseline**
+**v0.2 — pluggable retrieval boundary**
 
 Implemented:
 
 - deterministic lexical retrieval
+- provider-neutral embedding interface
+- cosine-similarity semantic retrieval
+- deterministic embedding fixtures for offline tests
+- configurable top-k retrieval
 - explicit evidence objects
 - machine-checkable citations
 - groundedness score
@@ -134,11 +187,10 @@ Implemented:
 
 Next milestones:
 
-- embedding-based semantic retrieval
 - claim-level evidence alignment
 - precision@k / recall@k retrieval metrics
-- LLM provider adapter behind a strict interface
 - benchmark dataset + experiment runner
+- LLM provider adapter behind a strict interface
 - semantic groundedness / entailment checks
 - evaluation reports and regression tracking
 
