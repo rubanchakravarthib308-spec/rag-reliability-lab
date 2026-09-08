@@ -1,0 +1,53 @@
+{
+  "version": "v1",
+  "top_k": 3,
+  "evaluation_threshold": 0.65,
+  "thresholds": {
+    "min_retrieval_precision": 0.8,
+    "min_retrieval_coverage": 1.0,
+    "min_groundedness": 0.9,
+    "max_hallucination_risk": 0.1,
+    "min_reliability_pass_rate": 1.0
+  },
+  "documents": [
+    {
+      "id": "doc-approval",
+      "text": "High-risk agent actions require human approval before execution."
+    },
+    {
+      "id": "doc-idempotency",
+      "text": "Idempotency keys prevent duplicate tool execution and block replayed actions."
+    },
+    {
+      "id": "doc-grounding",
+      "text": "A grounded RAG answer should be supported by retrieved evidence and valid citations."
+    },
+    {
+      "id": "doc-cache",
+      "text": "Redis can cache frequently accessed application data to reduce latency."
+    }
+  ],
+  "cases": [
+    {
+      "id": "approval-gate",
+      "question": "What is required before high-risk agent actions execute?",
+      "expected_evidence_ids": ["doc-approval"],
+      "answer": "High-risk agent actions require human approval before execution.",
+      "citations": ["doc-approval"]
+    },
+    {
+      "id": "replay-protection",
+      "question": "What prevents duplicate tool execution and replayed actions?",
+      "expected_evidence_ids": ["doc-idempotency"],
+      "answer": "Idempotency keys prevent duplicate tool execution and block replayed actions.",
+      "citations": ["doc-idempotency"]
+    },
+    {
+      "id": "rag-grounding",
+      "question": "What should support a grounded RAG answer?",
+      "expected_evidence_ids": ["doc-grounding"],
+      "answer": "A grounded RAG answer should be supported by retrieved evidence and valid citations.",
+      "citations": ["doc-grounding"]
+    }
+  ]
+}
