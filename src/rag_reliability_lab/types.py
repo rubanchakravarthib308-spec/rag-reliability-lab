@@ -22,9 +22,18 @@ class AnswerResult:
 
 
 @dataclass(frozen=True)
+class ClaimEvaluation:
+    claim: str
+    support_score: float
+    supported: bool
+    supporting_evidence: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
 class EvaluationResult:
     groundedness: float
     citation_precision: float
     hallucination_risk: float
     passed: bool
     reasons: tuple[str, ...] = field(default_factory=tuple)
+    claims: tuple[ClaimEvaluation, ...] = field(default_factory=tuple)
